@@ -4,3 +4,4 @@
 4. Se agregan las credenciales de Docker para que funcione Actions.
 5. Se configura la programación para que la página sea funcional.
 6. Se agrega el archivo properties de sonarcloud.
+7. Se configura el archivo main.py de workflow con sonarcloud.
