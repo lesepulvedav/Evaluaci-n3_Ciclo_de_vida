@@ -1,46 +1,76 @@
-name: Parte 1 - Docker CI/CD
+name: CI/CD Completo - Evaluación 3
 
-# CONFIGURACIÓN AJUSTADA A TUS RAMAS
 on:
   push:
-    # Se activa cuando haces push a tu rama de trabajo
-    branches: [ "lesepulvedav-evaluacion3" ] 
+    branches: [ "lesepulvedav-evaluacion3" ] # Tu rama de desarrollo
   pull_request:
-    # Se activa cuando abres un Pull Request hacia master
-    branches: [ "master" ]
+    branches: [ "master" ] # Tu rama principal (main)
 
 jobs:
-  docker-cicd:
+  # --- PARTE 2: ANÁLISIS DE SEGURIDAD Y CALIDAD ---
+  security-analysis:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. Descargar el código del repositorio
-      - name: Checkout code
+      - name: Checkout del código
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Necesario para SonarCloud
+
+      # 1. Análisis Estático con Snyk (Requisito: Análisis estático en PR)
+      - name: Snyk Security Scan
+        uses: snyk/actions/python@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          # Falla el pipeline si encuentra vulnerabilidades "High" o "Critical"
+          args: --severity-threshold=high
+
+      # 2. Análisis de Calidad con SonarCloud (Requisito: Análisis estático en PR)
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # 3. GitHub Advanced Security (Requisito: Dependencias y Secretos)
+      - name: Dependency Review
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v3
+        # Nota: El escaneo de secretos suele venir activado por defecto en repos públicos
+
+  # --- PARTE 1 + DOCKER SCOUT: CONSTRUCCIÓN Y DESPLIEGUE ---
+  build-and-push:
+    needs: security-analysis  # ¡CRÍTICO! Esto interrumpe el despliegue si falla la seguridad
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del código
         uses: actions/checkout@v3
 
-      # 2. Login en Docker Hub
-      # Asegúrate de haber creado los secrets DOCKER_USERNAME y DOCKER_PASSWORD en GitHub
-      - name: Login to Docker Hub
+      - name: Login en Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # 3. Construir la imagen Docker (Build)
-      - name: Build Docker Image
+      - name: Construir imagen Docker
         run: docker build -t ${{ secrets.DOCKER_USERNAME }}/tienda-lacteos:${{ github.sha }} .
 
-      # 4. Ejecutar pruebas unitarias DENTRO del contenedor (Requisito de la prueba)
-      # Esto asegura que "si las pruebas fallan, no se publique la imagen"
-      - name: Run Tests inside Container
+      # Pruebas unitarias (Requisito Parte 1)
+      - name: Ejecutar pruebas unitarias
         run: docker run --rm ${{ secrets.DOCKER_USERNAME }}/tienda-lacteos:${{ github.sha }} pytest
 
-      # 5. Publicar imagen en Docker Hub
-      # El 'if: success()' asegura que solo corra si el paso anterior (tests) funcionó
-      - name: Push to Docker Hub
-        if: success()
+      # 4. Docker Scout (Requisito: Integrar Docker Scout)
+      - name: Docker Scout Analysis
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ secrets.DOCKER_USERNAME }}/tienda-lacteos:${{ github.sha }}
+          only-severities: critical,high
+          # exit-code: true # Descomenta esto si quieres que falle también por vulnerabilidades de imagen
+
+      # Publicar en Docker Hub (Solo si todo lo anterior pasó)
+      - name: Publicar imagen
         run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/tienda-lacteos:${{ github.sha }}
-          # Etiquetamos también como 'latest' para facilitar su uso
           docker tag ${{ secrets.DOCKER_USERNAME }}/tienda-lacteos:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/tienda-lacteos:latest
           docker push ${{ secrets.DOCKER_USERNAME }}/tienda-lacteos:latest
