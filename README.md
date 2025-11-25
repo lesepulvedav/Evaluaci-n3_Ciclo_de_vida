@@ -5,3 +5,4 @@
 5. Se configura la programación para que la página sea funcional.
 6. Se agrega el archivo properties de sonarcloud.
 7. Se configura el archivo main.py de workflow con sonarcloud.
+8. Se ingresa las configuraciones correspondientes para que Actions funcione junto a sonarcloud, snyk, docker scout y GitHub Actions Security, además de que no pueda desplegar si se encuentra algún error.
